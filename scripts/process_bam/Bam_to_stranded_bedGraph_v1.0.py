@@ -3,12 +3,12 @@ import pysam
 import argparse
 import collections
 from collections import defaultdict
-import pandas as pd
 import numpy as np
 import time
 from time import gmtime, strftime
 
 def base_to_hist(data,chr,output):
+	''' This function convert the single base BED to a histogram BED to save space '''
 	for pos,coverage in data.iteritems(): #input pos should be 0-based
 		try:
 			if pos == last_pos_1:
@@ -96,20 +96,24 @@ def map_length(input):
 	return sum
 	
 def get_read_stack_single(read1):
+	global read_lengths
 	blocks = read.get_blocks() #in genomic coordinates
 	if read1.is_reverse:
 		strand = "-"
 	else:
 		strand = "+"
 	length = map_length(blocks)
-	read_lengths[length] += 1
+	read_lengths.append(length)
 	#print 1,blocks,map_length(blocks)
 	chr = read1.reference_name
 	blocks_to_dict(chr,strand,blocks)
 	
 def get_read_stack_mate(read1,read2):
+	global read_lengths
 	if read1.is_read2:
 		read1,read2 = read2,read1
+	if read1.reference_name != read2.reference_name: #check point, read1 and read2 should align to same conting
+		return None
 	blocks_1 = read1.get_blocks()
 	blocks_2 = read2.get_blocks()
 	blocks = union_interval(blocks_1+blocks_2)
@@ -118,7 +122,7 @@ def get_read_stack_mate(read1,read2):
 	else:
 		strand = "+"
 	length = map_length(blocks)
-	read_lengths[length] += 1
+	read_lengths.append(length)
 	#print 2,blocks,map_length(blocks)	
 	chr = read1.reference_name
 	blocks_to_dict(chr,strand,blocks)
@@ -143,7 +147,7 @@ if __name__ == "__main__":
 	group_require.add_argument("-n","--name",dest="name",required=True,help="Name prefix. File name = [name].plus.bedGraph & [name].minus.bedGraph")
 	group_other = parser.add_argument_group("Other")
 	group_other.add_argument("-r","--reverse",dest="reverse",action="store_true",default=False,help="Reverse read1 and read2. If use dUTP library")
-	group_other.add_argument("--version",action="version",version="%(prog)s 0.2")
+	group_other.add_argument("--version",action="version",version="%(prog)s 1.0")
 	options = parser.parse_args()
 	
 	sys.stderr.write("[%s] Work begins...\n" % strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
@@ -151,7 +155,7 @@ if __name__ == "__main__":
 	#windows = read_windows()
 	
 	TMP = {}
-	read_lengths = defaultdict(int)
+	read_lengths = []
 	
 	with pysam.AlignmentFile(options.input,"rb") as input, file(options.name+".plus.bedGraph",'w') as plus, file(options.name+".minus.bedGraph",'w') as minus:
 		#Set default values
@@ -162,7 +166,7 @@ if __name__ == "__main__":
 			blocks_dict['-'] = defaultdict(int)
 
 			for read in input.fetch(conting['SN']):
-				if read.is_secondary == False:
+				if read.is_secondary == False: #primary alignamnet for a pair only
 					if read.query_name not in TMP:
 						if read.mate_is_unmapped or not read.is_paired:
 							get_read_stack_single(read)
@@ -178,57 +182,9 @@ if __name__ == "__main__":
 	sys.stderr.write("[%s] All finished!\n" % strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
 	
 	#Print mean map lengths
-	
-	df = pd.DataFrame.from_dict(read_lengths,orient="index")
-	df.columns = ["number"]
-	df["length"] = df.index
-	df = df.sort_values(by="number")
-	df = df.reset_index()
-	# df["product"] = df["number"] * df["length"]
-	df["cum"] = df["number"].cumsum()
-	
-	mean_len = (df["length"] * (df["number"]/df["number"].sum())).sum()
-	total = df["number"].sum()
-	max_length = df["length"].max()
-	min_length = df["length"].min()
-	
-	#cal std
-	std = (( (df["length"] - mean_len) ** 2 * df["number"]).sum() / total)**0.5
-
-	#cal median
-	if total % 2 == 0:
-		up_edge = total/2 + 1
-		bottom_edge = total/2
-		
-		if df[df["cum"]==up_edge].shape[0] == 1:
-			median_1 = df[df["cum"]==up_edge]["length"].tolist()[0]
-		else:
-			less_max = df[df["cum"]<up_edge]["cum"].max()
-			greater_min = df[df["cum"]>up_edge]["cum"].min()
-			# print less_max,up_edge,greater_min
-			# print df[(df["cum"]<greater_min)&(df["cum"]>less_max)]["length"]
-			# print df[df["cum"]>=less_max]
-			median_1 = df[(df["cum"]<=greater_min)&(df["cum"]>less_max)]["length"].tolist()[0]
-			
-		if df[df["cum"]==bottom_edge].shape[0] == 1:
-			median_2 = df[df["cum"]==bottom_edge]["length"].tolist()[0]
-		else:
-			less_max = df[df["cum"]<bottom_edge]["cum"].max()
-			greater_min = df[df["cum"]>bottom_edge]["cum"].min()
-			median_2 = df[(df["cum"]<=greater_min)&(df["cum"]>less_max)]["length"].tolist()[0]
-		median = ( median_1 + median_2 ) / 2.0
-			
-	elif total % 2 == 1:
-		position = total/2+1
-		if df[df["cum"]==position].shape[0] == 1:
-			median = df[df["cum"]==position]["length"].tolist()[0]
-		else:
-			less_max = df[df["cum"]<position]["cum"].max()
-			greater_min = df[df["cum"]>position]["cum"].min()
-			median = float(df[(df["cum"]<=greater_min)&(df["cum"]>less_max)]["length"].tolist()[0])
-	
+	read_lengths = np.array(read_lengths)
 	#print read_lengths.mean(),read_lengths.std(),read_lengths.max(),read_lengths.min()
 	sys.stdout.write("\n")
-	sys.stdout.write("Mean map length is: %.2f +/- %.2f bp\nMedian length: %.2f bp\nMax length: %.2f bp\nMin length: %.2f bp\n" % (mean_len,std,median,max_length,min_length))
+	sys.stdout.write("Mean map length is: %.2f +/- %.2f bp\nMedian length: %.2f bp\nMax length: %.2f bp\nMin length: %.2f bp\n" % (read_lengths.mean(),read_lengths.std(),np.median(read_lengths),read_lengths.max(),read_lengths.min()))
 	
 	
