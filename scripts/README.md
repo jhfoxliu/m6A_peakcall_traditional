@@ -1,0 +1,1 @@
+Please place this script in a proper directory.

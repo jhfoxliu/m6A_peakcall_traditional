@@ -29,7 +29,7 @@ samtools = '/share/public/apps/bin/samtools'
 bowtie2 = '/share/public/apps/bowtie2/2.3.4.2/bowtie2'
 cufflinks = '/share/public/apps/bin/cufflinks'
 bedtools = '/share/public/apps/bedtools/2.29.2/bin/bedtools'
-bedGraph_script = '/share/public1/data/liujh/script/m5C-seq/Bam_to_stranded_bedGraph_fix.py'
+bedGraph_script = '/share/public1/data/liujh/script/m5C-seq/Bam_to_stranded_bedGraph_v1.0.py'
 #namespace
 
 PATH = "./"#sys.argv[1]
@@ -53,7 +53,7 @@ with open(sys.argv[1],"r") as input:
 		JOB.step_end()
 
 		JOB.step_start(step_name="hisat2",memory="100G")
-		JOB.add_process("{hisat2} -p 12 --no-unal --rna-strandness FR -x {genome_index} -1 read1.cutadapt.fastq -2 read2.cutadapt.fastq -S hisat2.sam".format(hisat2=hisat2,genome_index=genome_index))
+		JOB.add_process("{hisat2} -p 12 --no-unal --no-discordant --rna-strandness FR -x {genome_index} -1 read1.cutadapt.fastq -2 read2.cutadapt.fastq -S hisat2.sam".format(hisat2=hisat2,genome_index=genome_index))
 		# unique only
 		JOB.add_process("{samtools} view -q 60 -bS hisat2.sam > hisat2.bam ;\n".format(samtools=samtools))
 		JOB.add_process("{samtools} sort -@ 4 -m 4G -o hisat2.sorted.bam hisat2.bam;\n".format(samtools=samtools))
