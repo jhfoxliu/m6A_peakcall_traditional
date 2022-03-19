@@ -62,7 +62,7 @@ with open(sys.argv[1],"r") as input:
 		JOB.step_end()
 		
 		JOB.step_start(step_name="BedGraph",memory="100G")
-		JOB.add_process("{python} {bedGraph_script} -r -i hisat2.sorted.bam -n {name}".format(python=python, name=name, bedGraph_script=bedGraph_script))
+		JOB.add_process("{python} {bedGraph_script} -i hisat2.sorted.bam -n {name}".format(python=python, name=name, bedGraph_script=bedGraph_script))
 		JOB.step_end()
 		
 		JOB.job_finish()
